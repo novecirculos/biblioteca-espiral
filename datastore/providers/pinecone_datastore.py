@@ -1,7 +1,7 @@
 import os
 from typing import Any, Dict, List, Optional
 import pinecone
-from tenacity import retry, wait_random_exponential, stop_after_attempt
+from tenacity import retry, wait_random_exponential, stop_after_attempt, retry_if_exception_type
 import asyncio
 
 from datastore.datastore import DataStore
@@ -106,7 +106,12 @@ class PineconeDataStore(DataStore):
 
         return doc_ids
 
-    @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(3))
+    @retry(
+    wait=wait_random_exponential(min=1, max=20),
+    stop=stop_after_attempt(3),
+    retry_error_callback=lambda retry_state: retry_state.outcome.throw(),
+    retry=retry_if_exception_type(AttributeError)
+    )
     async def _query(
         self,
         queries: List[QueryWithEmbedding],
@@ -141,7 +146,7 @@ class PineconeDataStore(DataStore):
                 metadata = result.metadata
                 # Remove document id and text from metadata and store it in a new variable
                 metadata_without_text = (
-                    {key: value for key, value in metadata.items() if key != "text"}
+                    {key: str(value) if key == "document_id" else value for key, value in metadata.items() if key != "text"}
                     if metadata
                     else None
                 )
